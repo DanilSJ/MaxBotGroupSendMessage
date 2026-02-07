@@ -2,7 +2,7 @@ import asyncio
 import logging
 import json
 from datetime import datetime
-
+from zoneinfo import ZoneInfo
 from maxapi import Bot, Dispatcher
 from maxapi.types import MessageCreated, Command
 
@@ -166,11 +166,13 @@ async def send_to_all_chats():
 
 # ---------------- Планировщик ---------------- #
 
+NOVOSIBIRSK_TZ = ZoneInfo("Asia/Novosibirsk")
+
 async def scheduler():
     sent_today = set()
 
     while True:
-        now = datetime.now()
+        now = datetime.now(NOVOSIBIRSK_TZ)   # ← Новосибирское время
         current = (now.hour, now.minute, now.second)
 
         for t in SEND_TIMES:
