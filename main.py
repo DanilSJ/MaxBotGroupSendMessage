@@ -24,9 +24,9 @@ def save_config():
 
 config = load_config()
 MESSAGE_URL = config.get("message_url", None)
-SEND_HOUR = config.get("hour", 0)
-SEND_MINUTE = config.get("minute", 0)
-SEND_SECOND = config.get("second", 0)
+
+SEND_TIMES = config.get("times", [])
+
 
 
 # ---------------- Команды бота ---------------- #
@@ -105,17 +105,41 @@ async def send_now(event: MessageCreated):
 
 @dp.message_created(Command("settime"))
 async def set_time(event: MessageCreated):
-    global SEND_HOUR, SEND_MINUTE, SEND_SECOND
-    parts = event.message.body.text.split(" ", 1)
-    try:
-        h, m, s = map(int, parts[1].split(":"))
-    except:
-        return await event.message.answer("Формат: /settime 12:30:00")
+    global SEND_TIMES
 
-    SEND_HOUR, SEND_MINUTE, SEND_SECOND = h, m, s
-    config["hour"], config["minute"], config["second"] = h, m, s
+    parts = event.message.body.text.split(" ", 1)
+
+    if len(parts) < 2:
+        return await event.message.answer("Формат:\n/settime 12:00:00 15:30:00\nили\n/settime 0")
+
+    # Сброс
+    if parts[1].strip() == "0":
+        SEND_TIMES = []
+        config["times"] = []
+        save_config()
+        return await event.message.answer("🗑 Расписание очищено")
+
+    raw_times = parts[1].split()
+
+    if len(raw_times) > 7:
+        return await event.message.answer("❌ Максимум 7 времён")
+
+    parsed = []
+
+    try:
+        for t in raw_times:
+            h, m, s = map(int, t.split(":"))
+            parsed.append((h, m, s))
+    except:
+        return await event.message.answer("❌ Формат времени: HH:MM:SS")
+
+    SEND_TIMES = parsed
+    config["times"] = parsed
     save_config()
-    await event.message.answer(f"⏰ Время рассылки установлено на {h}:{m}:{s}")
+
+    text = "\n".join([f"{h:02}:{m:02}:{s:02}" for h, m, s in parsed])
+
+    await event.message.answer(f"⏰ Установлены времена:\n{text}")
 
 
 # ---------------- Отправка сообщений по URL ---------------- #
@@ -143,17 +167,23 @@ async def send_to_all_chats():
 # ---------------- Планировщик ---------------- #
 
 async def scheduler():
-    sent = False
+    sent_today = set()
+
     while True:
         now = datetime.now()
-        if (now.hour, now.minute, now.second) == (SEND_HOUR, SEND_MINUTE, SEND_SECOND):
-            if not sent:
-                await send_to_all_chats()
-                sent = True
-        else:
-            sent = False
-        await asyncio.sleep(1)
+        current = (now.hour, now.minute, now.second)
 
+        for t in SEND_TIMES:
+            key = (now.date(), t)
+
+            if current == tuple(t) and key not in sent_today:
+                await send_to_all_chats()
+                sent_today.add(key)
+
+        # очищаем каждый день
+        sent_today = {k for k in sent_today if k[0] == now.date()}
+
+        await asyncio.sleep(1)
 
 # ---------------- Главная функция ---------------- #
 
